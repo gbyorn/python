@@ -35,10 +35,12 @@ def get_info(sch):
     s['Hostname'] = sch[22] if len(sch) > 22 else ''
     return s
 
+
 def main():
     data = pyexcel_ods.get_data('/opt/data/KAIS_KRO.ods')['2018-neo-integr-3']
     data.pop(0)
     region = (str(input('Введите район: '))).lower()
+    state = (str(input('Введите режим конфигурации (local / remote): '))).lower()
     print('Start.')
     for sch in data:
         if not sch:
@@ -47,8 +49,19 @@ def main():
 
         if s['Reg'] != region:
             continue
-
         print('### Sch', s['SchNumb'], '###')
+        if state == 'local':
+            with open('/opt/data/local_config', 'r') as local_config_file:
+                for line in local_config_file:
+                    os.system(line.format(lo=s['IPlo']))
+        elif state == 'remote':
+            with open('/opt/data/remote_config', 'r') as remote_config_file:
+                cmd = []
+                for line in remote_config_file:
+                    cmd.append(line)
+        else:
+            print('Не верный формат. Досвидания.')
+        print('### Configuration finished ###')
     return 0
 
 
