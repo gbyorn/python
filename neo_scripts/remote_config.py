@@ -33,7 +33,7 @@ def get_info(sch):
     s['Address'] = sch[20] if len(sch) > 20 else ''
     s['Translit'] = sch[21] if len(sch) > 21 else ''
     s['Hostname'] = sch[22] if len(sch) > 22 else ''
-
+    return s
 
 def main():
     data = pyexcel_ods.get_data('/opt/data/KAIS_KRO.ods')['2018-neo-integr-3']
@@ -47,7 +47,9 @@ def main():
 
         if s['Reg'] != region:
             continue
+
         print('### Sch', s['SchNumb'], '###')
+    return 0
 
 
 if __name__ == '__main__':
