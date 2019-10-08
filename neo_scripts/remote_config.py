@@ -53,7 +53,7 @@ def main():
         if state == 'local':
             with open('/opt/data/local_config', 'r') as local_config_file:
                 for line in local_config_file:
-                    os.system(line.format(lo=s['IPlo']))
+                    os.system(line.format(lo=s['IPlo'], reg=s['Reg']))
         elif state == 'remote':
             with open('/opt/data/remote_config', 'r') as remote_config_file:
                 cmd = []
