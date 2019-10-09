@@ -5,8 +5,6 @@ import os
 import json
 import pyexcel_ods
 
-cfg_file_path = "/opt/config_sch.txt"
-
 
 def get_info(sch):
     s = {}
@@ -49,6 +47,12 @@ def main():
 
         if s['Reg'] != region:
             continue
+        with open('/opt/data/exception_ip', 'r') as exception_ip_file:
+            address = []
+            for ip in exception_ip_file:
+                address.append(ip.strip())
+        if s['IPlo'] in address:
+            continue
         print('### Sch', s['SchNumb'], '###')
         if state == 'local':
             with open('/opt/data/local_config', 'r') as local_config_file:
@@ -57,10 +61,20 @@ def main():
         elif state == 'remote':
             with open('/opt/data/remote_config', 'r') as remote_config_file:
                 cmd = []
+                cmd.append('configure')
                 for line in remote_config_file:
                     cmd.append(line)
+                cmd.append('commit')
+                cmd.append('save')
+                cmd.append('exit')
+            with open('/opt/data/config_sch.txt', 'w+') as config_sch_file:
+                for command in cmd:
+                    config_sch_file.write(command + '\n')
+            run_expect = '/opt/data/config_test.exp ' + s['IPlo'] + ' /opt/data/config_sch.txt'
+            os.system(run_expect)
+            os.remove('/opt/data/config_sch.txt')
         else:
-            print('Не верный формат. Досвидания.')
+            print('Неверный формат. Досвидания.')
         print('### Configuration finished ###')
     return 0
 
