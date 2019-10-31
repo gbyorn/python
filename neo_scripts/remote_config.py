@@ -6,6 +6,7 @@ import json
 import pyexcel_ods
 import argparse
 import subprocess
+import tabulate
 
 
 def get_info(sch):
@@ -36,6 +37,16 @@ def get_info(sch):
     return s
 
 
+def verbose(value):
+    if 0 < value < 8:
+        mail_verb = value // 4
+        process_verb = (value % 4) // 2
+        finish_verb = (value % 4) % 2
+        return mail_verb, process_verb, finish_verb
+    else:
+        return False
+
+
 def main():
     data = pyexcel_ods.get_data('/opt/data/KAIS_KRO.ods')['2018-neo-integr-3']
     data.pop(0)
@@ -47,18 +58,34 @@ def main():
     group.add_argument('-l', '--local', action='store_true', help='Set local configuration mode.')
     parser.add_argument('-c', '--configure', action='store_true', help='Configuration mode for remote devices.')
     parser.add_argument('-s', '--save', action='store_true', help='Commit and save configuration on remote devices.')
-    parser.add_argument('-v', '--verbose', action='store_true', help='Verbose mode. '
-                                                                     'Print list of devices and send email.')
+    parser.add_argument('-v', action='store', dest='verbose', type=int, default=1,
+                        help='Verbose mode. Print list of devices and send email. '
+                             'A numeric mode is from one to four octal digits (0-7), '
+                             'derived by adding up the bits with values 4, 2, and 1. '
+                             '0 is without verbose, 1 is final verbose, 2 is process '
+                             'verbose and 3 is mail verbose')
     args = parser.parse_args()
-
-    bad_configuration = []
-    good_configuration = []
+    final_output = {'bad_configuration': [], 'good_configuration': []}
+    verbose_dict = {}
+    if args.verbose:
+        try:
+            verbose_dict = dict(zip(['mail_verb', 'process_verb', 'finish_verb'], verbose(args.verbose)))
+        except TypeError:
+            print('Incorrect format verbose! Will be use default value.')
+            verbose_dict = {'mail_verb': 0,
+                            'process_verb': 0,
+                            'finish_verb': 1}
+    if verbose_dict['process_verb']:
+        stdout = None
+        stderr = None
+    else:
+        stdout = subprocess.PIPE
+        stderr = subprocess.PIPE
     print('Start.')
     for sch in data:
         if not sch:
             continue
         s = get_info(sch)
-
         if s['Reg'] != args.region:
             continue
         with open('/opt/data/exception_ip', 'r') as exception_ip_file:
@@ -67,18 +94,20 @@ def main():
                 address.append(ip.strip())
         if s['IPlo'] in address:
             continue
-        print('### Sch', s['SchNumb'], '###')
+        if verbose_dict['process_verb']:
+            print('### Sch', s['SchNumb'], '###')
         if args.local:
             with open('/opt/data/local_config', 'r') as local_config_file:
                 for line in local_config_file:
                     reply = subprocess.run(line.format(lo=s['IPlo'], reg=s['Reg']),
                                            shell=True,
-                                           stderr=subprocess.PIPE,
+                                           stdout=stdout,
+                                           stderr=stderr,
                                            encoding='utf-8')
                     if reply.returncode == 0:
-                        good_configuration.append(s['IPlo'])
+                        final_output['good_configuration'].append(s['IPlo'])
                     else:
-                        bad_configuration.append(s['IPlo'])
+                        final_output['bad_configuration'].append(s['IPlo'])
         elif args.remote:
             with open('/opt/data/remote_config', 'r') as remote_config_file:
                 cmd = []
@@ -95,16 +124,21 @@ def main():
                 for command in cmd:
                     config_sch_file.write(command + '\n')
             run_expect = '/opt/data/config_test.exp ' + s['IPlo'] + ' /opt/data/config_sch.txt'
-            os.system(run_expect)
+            reply = subprocess.run(run_expect,
+                                   shell=True,
+                                   stdout=stdout,
+                                   stderr=stderr,
+                                   encoding='utf-8')
+            if reply.returncode == 0:
+                final_output['good_configuration'].append(s['IPlo'])
+            else:
+                final_output['bad_configuration'].append(s['IPlo'])
             os.remove('/opt/data/config_sch.txt')
-            print('### Configuration finished ###')
         else:
             print("Mode doesn't exist. Bye.")
-    print('Device OK:')
-    print(*good_configuration)
-    print('Device not OK:')
-    print(*bad_configuration)
-    return args.verbose
+    if verbose_dict['finish_verb']:
+        print(tabulate.tabulate(final_output, headers='keys'))
+    return 0
 
 
 if __name__ == '__main__':
