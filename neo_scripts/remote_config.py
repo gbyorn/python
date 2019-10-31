@@ -4,6 +4,8 @@ import sys
 import os
 import json
 import pyexcel_ods
+import argparse
+import subprocess
 
 
 def get_info(sch):
@@ -37,15 +39,27 @@ def get_info(sch):
 def main():
     data = pyexcel_ods.get_data('/opt/data/KAIS_KRO.ods')['2018-neo-integr-3']
     data.pop(0)
-    region = (str(input('Введите район: '))).lower()
-    state = (str(input('Введите режим конфигурации (local / remote): '))).lower()
+    parser = argparse.ArgumentParser(description='Set mode local/remote '
+                                                 'and configuration target region.')
+    parser.add_argument('region', action='store', type=str, help='Set region to configure.')
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('-r', '--remote', action='store_true', help='Set remote configuration mode.')
+    group.add_argument('-l', '--local', action='store_true', help='Set local configuration mode.')
+    parser.add_argument('-c', '--configure', action='store_true', help='Configuration mode for remote devices.')
+    parser.add_argument('-s', '--save', action='store_true', help='Commit and save configuration on remote devices.')
+    parser.add_argument('-v', '--verbose', action='store_true', help='Verbose mode. '
+                                                                     'Print list of devices and send email.')
+    args = parser.parse_args()
+
+    bad_configuration = []
+    good_configuration = []
     print('Start.')
     for sch in data:
         if not sch:
             continue
         s = get_info(sch)
 
-        if s['Reg'] != region:
+        if s['Reg'] != args.region:
             continue
         with open('/opt/data/exception_ip', 'r') as exception_ip_file:
             address = []
@@ -54,29 +68,43 @@ def main():
         if s['IPlo'] in address:
             continue
         print('### Sch', s['SchNumb'], '###')
-        if state == 'local':
+        if args.local:
             with open('/opt/data/local_config', 'r') as local_config_file:
                 for line in local_config_file:
-                    os.system(line.format(lo=s['IPlo'], reg=s['Reg']))
-        elif state == 'remote':
+                    reply = subprocess.run(line.format(lo=s['IPlo'], reg=s['Reg']),
+                                           shell=True,
+                                           stderr=subprocess.PIPE,
+                                           encoding='utf-8')
+                    if reply.returncode == 0:
+                        good_configuration.append(s['IPlo'])
+                    else:
+                        bad_configuration.append(s['IPlo'])
+        elif args.remote:
             with open('/opt/data/remote_config', 'r') as remote_config_file:
                 cmd = []
-                cmd.append('configure')
+                if args.configure:
+                    cmd.append('configure')
                 for line in remote_config_file:
                     cmd.append(line)
-                cmd.append('commit')
-                cmd.append('save')
-                cmd.append('exit')
+                if args.configure and args.save:
+                    cmd.append('commit')
+                    cmd.append('save')
+                if args.configure:
+                    cmd.append('exit')
             with open('/opt/data/config_sch.txt', 'w+') as config_sch_file:
                 for command in cmd:
                     config_sch_file.write(command + '\n')
             run_expect = '/opt/data/config_test.exp ' + s['IPlo'] + ' /opt/data/config_sch.txt'
             os.system(run_expect)
             os.remove('/opt/data/config_sch.txt')
+            print('### Configuration finished ###')
         else:
-            print('Неверный формат. Досвидания.')
-        print('### Configuration finished ###')
-    return 0
+            print("Mode doesn't exist. Bye.")
+    print('Device OK:')
+    print(*good_configuration)
+    print('Device not OK:')
+    print(*bad_configuration)
+    return args.verbose
 
 
 if __name__ == '__main__':
