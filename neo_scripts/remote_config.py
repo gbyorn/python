@@ -7,6 +7,21 @@ import pyexcel_ods
 import argparse
 import subprocess
 import tabulate
+import smtplib
+import datetime
+import re
+
+
+def send_email(text_mail, subject_mail):
+    server_email = 'localhost'
+    from_email = 'python@configure.com'
+    to_email = ['lokhanko@numatech.ru', 'pugach@numatech.ru']
+
+    message_email = 'From: %s\nTo: %s\nSubject: %s\n%s' % (from_email, to_email, subject_mail, text_mail)
+    server = smtplib.SMTP(server_email)
+    for mail in to_email:
+        server.sendmail(from_email, mail, message_email)
+    server.quit()
 
 
 def get_info(sch):
@@ -67,14 +82,16 @@ def main():
     args = parser.parse_args()
     final_output = {'bad_configuration': [], 'good_configuration': []}
     verbose_dict = {}
+    check = False
+    date_start = re.search(r'(\d+):(\d+):(\d+)', str(datetime.datetime.now()))
     if args.verbose:
         try:
             verbose_dict = dict(zip(['mail_verb', 'process_verb', 'finish_verb'], verbose(args.verbose)))
         except TypeError:
             print('Incorrect format verbose! Will be use default value.')
-            verbose_dict = {'mail_verb': 0,
+            verbose_dict = {'mail_verb': 1,
                             'process_verb': 0,
-                            'finish_verb': 1}
+                            'finish_verb': 0}
     if verbose_dict['process_verb']:
         stdout = None
         stderr = None
@@ -98,6 +115,16 @@ def main():
             print('### Sch', s['SchNumb'], '###')
         if args.local:
             with open('/opt/data/local_config', 'r') as local_config_file:
+                if verbose_dict['mail_verb'] and not check:
+                    subject_email = str('Configuration ' + args.region + ' start ' + date_start.group(0))
+                    text_email = f'''
+                    Configuration region: {args.region}
+                    Configuration mode: local
+                    Configuration:
+                    {local_config_file.readlines()}
+                    '''
+                    send_email(text_email, subject_email)
+                    check = True
                 for line in local_config_file:
                     reply = subprocess.run(line.format(lo=s['IPlo'], reg=s['Reg']),
                                            shell=True,
@@ -138,8 +165,18 @@ def main():
             print("Mode doesn't exist. Bye.")
     if verbose_dict['finish_verb']:
         print(tabulate.tabulate(final_output, headers='keys'))
-    return 0
+    if verbose_dict['mail_verb']:
+        return final_output
+    else:
+        return 0
 
 
 if __name__ == '__main__':
-    main()
+    final_dict = main()
+    text_mail = re.search(r'(\d+):(\d+):(\d+)', str(datetime.datetime.now()))
+    subject_email = str('Configuration finish ' + text_mail.group(0))
+    text_email = f'''
+    {tabulate.tabulate(final_dict, headers='keys')}
+    '''
+    send_email(text_email, subject_email)
+    print('Finish.')
